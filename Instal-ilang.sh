@@ -1,49 +1,42 @@
 #!/bin/bash
 
-PANEL="/var/www/pterodactyl"
-NAVFILE="$PANEL/resources/scripts/components/NavigationBar.tsx"
-BACKUP="$NAVFILE.bak-protect"
+PANEL_PATH="/var/www/pterodactyl"
+TARGET_FILE="$PANEL_PATH/resources/scripts/components/NavigationBar.tsx"
+BACKUP_FILE="$TARGET_FILE.protect-backup"
 
-echo "=== PROTECT ADMIN PANEL (Hanya Admin ID 1) ==="
-
-if [ ! -f "$NAVFILE" ]; then
-    echo "File tidak ditemukan: $NAVFILE"
+echo "🔍 Mengecek file NavigationBar.tsx..."
+if [ ! -f "$TARGET_FILE" ]; then
+    echo "❌ ERROR: File NavigationBar.tsx tidak ditemukan!"
     exit 1
 fi
 
-# Backup dulu
-cp "$NAVFILE" "$BACKUP"
+echo "🗂 Membuat backup..."
+cp "$TARGET_FILE" "$BACKUP_FILE"
 
-echo "Backup dibuat: $BACKUP"
-echo "Memodifikasi NavigationBar.tsx..."
-
-cat << 'EOF' > "$NAVFILE"
-import React from "react";
-import { NavLink } from "react-router-dom";
-import { useStoreState } from "@/state";
+echo "⚙️ Menerapkan proteksi menu admin..."
+cat > "$TARGET_FILE" << 'EOF'
+import React from 'react';
+import { NavLink } from 'react-router-dom';
+import useUser from '@/state/user';
+import SubNavigation from '@/components/SubNavigation';
 
 export default function NavigationBar() {
-    const user = useStoreState((state) => state.user.data);
-
-    const isMainAdmin = user && user.id === 1; // HANYA ADMIN ID 1 YANG PUNYA FULL MENU
+    const user = useUser();
+    const isMainAdmin = user?.id === 1;
 
     return (
-        <div>
-            {/* Dashboard selalu tampil untuk semua */}
-            <NavLink to="/admin">Dashboard</NavLink>
+        <div className='navigation-bar'>
+            <NavLink to='/' className='navigation-link'>Dashboard</NavLink>
 
-            {/* Jika bukan admin utama, semua menu admin disembunyikan */}
             {isMainAdmin && (
                 <>
-                    <NavLink to="/admin/settings">Settings</NavLink>
-                    <NavLink to="/admin/api">Application API</NavLink>
-                    <NavLink to="/admin/databases">Databases</NavLink>
-                    <NavLink to="/admin/locations">Locations</NavLink>
-                    <NavLink to="/admin/nodes">Nodes</NavLink>
-                    <NavLink to="/admin/servers">Servers</NavLink>
-                    <NavLink to="/admin/users">Users</NavLink>
-                    <NavLink to="/admin/mounts">Mounts</NavLink>
-                    <NavLink to="/admin/nests">Nests</NavLink>
+                    <NavLink to='/admin/locations' className='navigation-link'>Locations</NavLink>
+                    <NavLink to='/admin/nodes' className='navigation-link'>Nodes</NavLink>
+                    <NavLink to='/admin/servers' className='navigation-link'>Servers</NavLink>
+                    <NavLink to='/admin/users' className='navigation-link'>Users</NavLink>
+                    <NavLink to='/admin/databases' className='navigation-link'>Databases</NavLink>
+                    <NavLink to='/admin/nests' className='navigation-link'>Nests</NavLink>
+                    <NavLink to='/admin/mounts' className='navigation-link'>Mounts</NavLink>
                 </>
             )}
         </div>
@@ -51,11 +44,5 @@ export default function NavigationBar() {
 }
 EOF
 
-echo "Rebuilding panel..."
-cd $PANEL
-npm install > /dev/null 2>&1
-npm run build:production
-
-chown -R www-data:www-data $PANEL
-
-echo "=== Protect selesai! ==="
+echo "🚀 Proteksi berhasil dipasang!"
+echo "🔧 Jalankan: cd /var/www/pterodactyl && yarn build && php artisan cache:clear"
