@@ -1,48 +1,79 @@
 #!/bin/bash
+set -e
 
-PANEL_PATH="/var/www/pterodactyl"
-TARGET_FILE="$PANEL_PATH/resources/scripts/components/NavigationBar.tsx"
-BACKUP_FILE="$TARGET_FILE.protect-backup"
+echo "=== Pterodactyl Hard Admin Protections ==="
 
-echo "🔍 Mengecek file NavigationBar.tsx..."
-if [ ! -f "$TARGET_FILE" ]; then
-    echo "❌ ERROR: File NavigationBar.tsx tidak ditemukan!"
-    exit 1
-fi
+cd /var/www/pterodactyl
 
-echo "🗂 Membuat backup..."
-cp "$TARGET_FILE" "$BACKUP_FILE"
+echo "[*] Backup file..."
+mkdir -p storage/protect-backup
+cp -r resources/views storage/protect-backup/
+cp -r app/Http/Middleware storage/protect-backup/
 
-echo "⚙️ Menerapkan proteksi menu admin..."
-cat > "$TARGET_FILE" << 'EOF'
-import React from 'react';
-import { NavLink } from 'react-router-dom';
-import useUser from '@/state/user';
-import SubNavigation from '@/components/SubNavigation';
+#############################################
+# 1. BUAT SIDEBAR LIMITED UNTUK ADMIN BIASA
+#############################################
 
-export default function NavigationBar() {
-    const user = useUser();
-    const isMainAdmin = user?.id === 1;
-
-    return (
-        <div className='navigation-bar'>
-            <NavLink to='/' className='navigation-link'>Dashboard</NavLink>
-
-            {isMainAdmin && (
-                <>
-                    <NavLink to='/admin/locations' className='navigation-link'>Locations</NavLink>
-                    <NavLink to='/admin/nodes' className='navigation-link'>Nodes</NavLink>
-                    <NavLink to='/admin/servers' className='navigation-link'>Servers</NavLink>
-                    <NavLink to='/admin/users' className='navigation-link'>Users</NavLink>
-                    <NavLink to='/admin/databases' className='navigation-link'>Databases</NavLink>
-                    <NavLink to='/admin/nests' className='navigation-link'>Nests</NavLink>
-                    <NavLink to='/admin/mounts' className='navigation-link'>Mounts</NavLink>
-                </>
-            )}
-        </div>
-    );
-}
+cat > resources/views/partials/admin/sidebar-limited.blade.php << 'EOF'
+<li class="nav-item">
+    <a href="/admin" class="nav-link">
+        <i class="fas fa-tachometer-alt"></i> Dashboard
+    </a>
+</li>
 EOF
 
-echo "🚀 Proteksi berhasil dipasang!"
-echo "🔧 Jalankan: cd /var/www/pterodactyl && yarn build && php artisan cache:clear"
+
+#############################################
+# 2. MODIFY admin.blade.php UNTUK SWITCH SIDEBAR
+#############################################
+
+ADMIN_FILE="resources/views/layouts/admin.blade.php"
+
+if ! grep -q "sidebar-limited" "$ADMIN_FILE"; then
+    sed -i '/@section('\''sidebar'\'')/a \
+@php \
+    $isMasterAdmin = auth()->user()->id === 1; \
+@endphp \
+@if($isMasterAdmin) \
+    @include('\''partials.admin.sidebar'\'') \
+@else \
+    @include('\''partials.admin.sidebar-limited'\'') \
+@endif \
+' "$ADMIN_FILE"
+fi
+
+
+#############################################
+# 3. HARD PROTECT BACKEND (AdminAccess.php)
+#############################################
+
+MIDDLEWARE="app/Http/Middleware/AdminAuthenticate.php"
+
+if grep -q "Hard Admin Protect" "$MIDDLEWARE"; then
+    echo "[✓] Middleware already patched."
+else
+cat >> "$MIDDLEWARE" << 'EOF'
+
+// Hard Admin Protect
+if (auth()->check() && auth()->user()->root_admin) {
+    if (auth()->user()->id !== 1) {
+        return redirect('/')->with('error', 'Access denied.');
+    }
+}
+EOF
+fi
+
+
+#############################################
+# 4. CLEAR CACHE + FIX PERM
+#############################################
+
+php artisan optimize:clear
+php artisan view:clear
+
+chown -R www-data:www-data /var/www/pterodactyl
+
+echo "==========================================="
+echo "[✓] Protection installed successfully!"
+echo "Hanya Admin ID 1 yang bisa akses full admin."
+echo "==========================================="
